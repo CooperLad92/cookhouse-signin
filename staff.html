@@ -65,6 +65,32 @@
   .list-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px;}
   .list-item:last-child{border-bottom:none;}
   .list-item .sub{font-size:11.5px;color:var(--muted);}
+
+  .override-box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;}
+  .override-row{display:flex;align-items:center;gap:10px;}
+  .override-label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap;}
+  .switch{position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;}
+  .switch input{opacity:0;width:0;height:0;}
+  .slider{position:absolute;cursor:pointer;inset:0;background:#C7C4B6;border-radius:20px;transition:0.15s;}
+  .slider::before{content:"";position:absolute;height:14px;width:14px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:0.15s;}
+  input:checked + .slider{background:var(--danger);}
+  input:checked + .slider::before{transform:translateX(16px);}
+  #override-meal-row{margin-top:8px;}
+  #override-meal-row select{width:100%;font-size:12.5px;padding:6px 8px;}
+
+  .edit-btn{background:none;border:none;color:var(--olive);cursor:pointer;font-size:12px;font-family:'JetBrains Mono',monospace;margin-right:10px;}
+  .list-item-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);}
+  .list-item-row:last-child{border-bottom:none;}
+  .list-item-actions{display:flex;align-items:center;flex-shrink:0;}
+  .edit-form{display:flex;gap:6px;padding:8px 0;border-bottom:1px solid var(--line);}
+  .edit-form input, .edit-form select{padding:7px 9px;font-size:13px;}
+  .save-btn{background:var(--olive);color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-family:'Space Grotesk',sans-serif;font-weight:600;cursor:pointer;}
+  .cancel-btn{background:none;border:1.4px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;color:var(--muted);}
+
+  .report-btn{font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:13px;padding:9px 16px;
+    background:var(--ink);color:#fff;border:none;border-radius:8px;cursor:pointer;margin-left:auto;}
+  .report-btn:hover{background:#000;}
+  .meal-pills-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px;}
 </style>
 </head>
 <body>
@@ -74,7 +100,25 @@
       <div class="eyebrow">Cookhouse Staff Dashboard</div>
       <h1 id="site-heading">Today's sign-ins</h1>
     </div>
-    <span class="live-tag"><span class="dot"></span> Live</span>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+      <span class="live-tag"><span class="dot"></span> Live</span>
+      <div class="override-box" id="override-box">
+        <div class="override-row">
+          <span class="override-label" id="override-status">Auto (time-based)</span>
+          <label class="switch">
+            <input type="checkbox" id="override-toggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div id="override-meal-row" style="display:none;">
+          <select id="override-meal-select">
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+            <option value="dinner">Dinner</option>
+          </select>
+        </div>
+      </div>
+    </div>
   </header>
 
   <div class="tabs">
@@ -83,10 +127,13 @@
   </div>
 
   <div id="tab-dashboard">
-    <div class="meal-pills">
-      <button class="meal-pill active" data-meal="breakfast">Breakfast</button>
-      <button class="meal-pill" data-meal="lunch">Lunch</button>
-      <button class="meal-pill" data-meal="dinner">Dinner</button>
+    <div class="meal-pills-row">
+      <div class="meal-pills">
+        <button class="meal-pill active" data-meal="breakfast">Breakfast</button>
+        <button class="meal-pill" data-meal="lunch">Lunch</button>
+        <button class="meal-pill" data-meal="dinner">Dinner</button>
+      </div>
+      <button class="report-btn" id="download-report-btn">Download today's report</button>
     </div>
 
     <div class="panel">
@@ -185,33 +232,112 @@ async function loadDashboard() {
     </tr>`).join('') : '<tr><td colspan="3" style="color:var(--muted);">No sign-ins yet for this sitting.</td></tr>';
 }
 
+let studentsCache = [];
+
 async function loadManageLists() {
   const { data: courses } = await supabaseClient.from('courses').select('id, name').order('name');
   coursesCache = courses || [];
 
-  document.getElementById('course-list').innerHTML = coursesCache.map(c =>
-    `<div class="list-item"><span>${c.name}</span><button class="del" data-id="${c.id}" data-type="course">Remove</button></div>`
-  ).join('') || '<p style="color:var(--muted);font-size:13px;">No courses yet.</p>';
+  renderCourseList();
 
   const courseSelect = document.getElementById('new-student-course');
   courseSelect.innerHTML = '<option value="">Course</option>' +
     coursesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 
   const { data: students } = await supabaseClient
-    .from('students').select('id, name, courses(name)').order('name');
+    .from('students').select('id, name, course_id, courses(name)').order('name');
+  studentsCache = students || [];
 
-  document.getElementById('student-list').innerHTML = (students || []).map(s =>
-    `<div class="list-item"><span>${s.name}<div class="sub">${s.courses ? s.courses.name : 'No course'}</div></span>
-     <button class="del" data-id="${s.id}" data-type="student">Remove</button></div>`
-  ).join('') || '<p style="color:var(--muted);font-size:13px;">No students yet.</p>';
+  renderStudentList();
+}
 
-  document.querySelectorAll('.del').forEach(btn => {
+function renderCourseList() {
+  const el = document.getElementById('course-list');
+  if (!coursesCache.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px;">No courses yet.</p>'; return; }
+
+  el.innerHTML = coursesCache.map(c => `
+    <div class="list-item-row" data-row-course="${c.id}">
+      <span>${c.name}</span>
+      <div class="list-item-actions">
+        <button class="edit-btn" data-edit-course="${c.id}">Edit</button>
+        <button class="del" data-id="${c.id}" data-type="course">Remove</button>
+      </div>
+    </div>`).join('');
+
+  el.querySelectorAll('[data-edit-course]').forEach(btn => {
+    btn.addEventListener('click', () => startEditCourse(btn.dataset.editCourse));
+  });
+  el.querySelectorAll('.del[data-type="course"]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const table = btn.dataset.type === 'course' ? 'courses' : 'students';
-      await supabaseClient.from(table).delete().eq('id', btn.dataset.id);
+      if (!confirm('Remove this course and all its students? This cannot be undone.')) return;
+      await supabaseClient.from('courses').delete().eq('id', btn.dataset.id);
       loadManageLists();
     });
   });
+}
+
+function startEditCourse(id) {
+  const course = coursesCache.find(c => c.id === id);
+  const row = document.querySelector(`[data-row-course="${id}"]`);
+  row.outerHTML = `
+    <div class="edit-form" data-row-course="${id}">
+      <input type="text" id="edit-course-input-${id}" value="${course.name.replace(/"/g, '&quot;')}" />
+      <button class="save-btn" data-save-course="${id}">Save</button>
+      <button class="cancel-btn" data-cancel-course="${id}">Cancel</button>
+    </div>`;
+  document.querySelector(`[data-save-course="${id}"]`).addEventListener('click', async () => {
+    const newName = document.getElementById(`edit-course-input-${id}`).value.trim();
+    if (!newName) return;
+    await supabaseClient.from('courses').update({ name: newName }).eq('id', id);
+    loadManageLists();
+  });
+  document.querySelector(`[data-cancel-course="${id}"]`).addEventListener('click', loadManageLists);
+}
+
+function renderStudentList() {
+  const el = document.getElementById('student-list');
+  if (!studentsCache.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px;">No students yet.</p>'; return; }
+
+  el.innerHTML = studentsCache.map(s => `
+    <div class="list-item-row" data-row-student="${s.id}">
+      <span>${s.name}<div class="sub">${s.courses ? s.courses.name : 'No course'}</div></span>
+      <div class="list-item-actions">
+        <button class="edit-btn" data-edit-student="${s.id}">Edit</button>
+        <button class="del" data-id="${s.id}" data-type="student">Remove</button>
+      </div>
+    </div>`).join('');
+
+  el.querySelectorAll('[data-edit-student]').forEach(btn => {
+    btn.addEventListener('click', () => startEditStudent(btn.dataset.editStudent));
+  });
+  el.querySelectorAll('.del[data-type="student"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await supabaseClient.from('students').delete().eq('id', btn.dataset.id);
+      loadManageLists();
+    });
+  });
+}
+
+function startEditStudent(id) {
+  const student = studentsCache.find(s => s.id === id);
+  const row = document.querySelector(`[data-row-student="${id}"]`);
+  const courseOptions = coursesCache.map(c =>
+    `<option value="${c.id}" ${c.id === student.course_id ? 'selected' : ''}>${c.name}</option>`).join('');
+  row.outerHTML = `
+    <div class="edit-form" data-row-student="${id}">
+      <input type="text" id="edit-student-input-${id}" value="${student.name.replace(/"/g, '&quot;')}" />
+      <select id="edit-student-course-${id}">${courseOptions}</select>
+      <button class="save-btn" data-save-student="${id}">Save</button>
+      <button class="cancel-btn" data-cancel-student="${id}">Cancel</button>
+    </div>`;
+  document.querySelector(`[data-save-student="${id}"]`).addEventListener('click', async () => {
+    const newName = document.getElementById(`edit-student-input-${id}`).value.trim();
+    const newCourseId = document.getElementById(`edit-student-course-${id}`).value;
+    if (!newName || !newCourseId) return;
+    await supabaseClient.from('students').update({ name: newName, course_id: newCourseId }).eq('id', id);
+    loadManageLists();
+  });
+  document.querySelector(`[data-cancel-student="${id}"]`).addEventListener('click', loadManageLists);
 }
 
 document.getElementById('add-course-btn').addEventListener('click', async () => {
@@ -241,6 +367,143 @@ supabaseClient
 
 loadDashboard();
 setInterval(loadDashboard, 15000); // fallback refresh in case realtime misses one
+
+// ---- Manual open/closed override ----
+const overrideToggle = document.getElementById('override-toggle');
+const overrideStatus = document.getElementById('override-status');
+const overrideMealRow = document.getElementById('override-meal-row');
+const overrideMealSelect = document.getElementById('override-meal-select');
+
+async function loadOverrideState() {
+  const { data } = await supabaseClient.from('cookhouse_settings').select('*').eq('id', 1).single();
+  if (!data) return;
+  if (data.override_mode === 'closed') {
+    overrideToggle.checked = true;
+    overrideStatus.textContent = 'Forced CLOSED';
+    overrideMealRow.style.display = 'none';
+  } else if (data.override_mode === 'open') {
+    overrideToggle.checked = true;
+    overrideStatus.textContent = 'Forced OPEN';
+    overrideMealRow.style.display = 'block';
+    overrideMealSelect.value = data.override_meal || 'breakfast';
+  } else {
+    overrideToggle.checked = false;
+    overrideStatus.textContent = 'Auto (time-based)';
+    overrideMealRow.style.display = 'none';
+  }
+}
+
+// Toggle cycles: Auto -> Forced Open -> Forced Closed -> Auto
+overrideToggle.addEventListener('click', async (e) => {
+  e.preventDefault(); // we drive state manually since this is a 3-way cycle, not a plain on/off
+  const { data } = await supabaseClient.from('cookhouse_settings').select('override_mode').eq('id', 1).single();
+  const current = data ? data.override_mode : 'auto';
+  let next;
+  if (current === 'auto') next = 'open';
+  else if (current === 'open') next = 'closed';
+  else next = 'auto';
+
+  const payload = { id: 1, override_mode: next, updated_at: new Date().toISOString() };
+  if (next === 'open') payload.override_meal = overrideMealSelect.value || 'breakfast';
+  await supabaseClient.from('cookhouse_settings').upsert(payload);
+  loadOverrideState();
+});
+
+overrideMealSelect.addEventListener('change', async () => {
+  await supabaseClient.from('cookhouse_settings')
+    .update({ override_meal: overrideMealSelect.value, updated_at: new Date().toISOString() })
+    .eq('id', 1);
+});
+
+loadOverrideState();
+
+// ---- Download today's report ----
+document.getElementById('download-report-btn').addEventListener('click', async () => {
+  const today = todayDateString();
+  const { data: rows, error } = await supabaseClient
+    .from('signins')
+    .select('meal, signed_in_at, courses(name)')
+    .eq('signin_date', today);
+
+  if (error || !rows) { alert("Could not load today's data for the report."); return; }
+
+  const lines = [];
+  lines.push('COOKHOUSE MEAL REPORT');
+  lines.push('Date: ' + today);
+  lines.push('Generated: ' + new Date().toLocaleString());
+  lines.push('='.repeat(50));
+
+  let grandTotal = 0;
+
+  MEAL_WINDOWS.forEach(window => {
+    const mealRows = rows.filter(r => r.meal === window.key);
+    grandTotal += mealRows.length;
+
+    lines.push('');
+    lines.push(window.label.toUpperCase() + ' (' + window.start + '–' + window.end + ')');
+    lines.push('-'.repeat(50));
+    lines.push('Total signed in: ' + mealRows.length);
+
+    // Counts by course
+    const byCourse = {};
+    mealRows.forEach(r => {
+      const name = r.courses ? r.courses.name : 'Unknown';
+      byCourse[name] = (byCourse[name] || 0) + 1;
+    });
+    lines.push('');
+    lines.push('By course:');
+    if (Object.keys(byCourse).length === 0) {
+      lines.push('  (no sign-ins)');
+    } else {
+      Object.entries(byCourse).sort((a, b) => b[1] - a[1]).forEach(([name, count]) => {
+        lines.push('  ' + name + ': ' + count);
+      });
+    }
+
+    // Busiest / quietest 15-minute slot within the window
+    if (mealRows.length > 0) {
+      const bucketMinutes = 15;
+      const startMin = toMinutes(window.start);
+      const endMin = toMinutes(window.end);
+      const buckets = {};
+      for (let m = startMin; m < endMin; m += bucketMinutes) buckets[m] = 0;
+
+      mealRows.forEach(r => {
+        const d = new Date(r.signed_in_at);
+        const mins = d.getHours() * 60 + d.getMinutes();
+        const bucketStart = startMin + Math.floor((mins - startMin) / bucketMinutes) * bucketMinutes;
+        if (buckets[bucketStart] !== undefined) buckets[bucketStart]++;
+      });
+
+      const bucketLabel = (m) => {
+        const h = Math.floor(m / 60).toString().padStart(2, '0');
+        const mm = (m % 60).toString().padStart(2, '0');
+        return h + ':' + mm;
+      };
+
+      const entries = Object.entries(buckets).map(([m, c]) => ({ start: Number(m), count: c }));
+      const busiest = entries.reduce((a, b) => (b.count > a.count ? b : a));
+      const quietest = entries.reduce((a, b) => (b.count < a.count ? b : a));
+
+      lines.push('');
+      lines.push('Busiest 15-min slot: ' + bucketLabel(busiest.start) + '–' + bucketLabel(busiest.start + bucketMinutes) + ' (' + busiest.count + ' sign-ins)');
+      lines.push('Quietest 15-min slot: ' + bucketLabel(quietest.start) + '–' + bucketLabel(quietest.start + bucketMinutes) + ' (' + quietest.count + ' sign-ins)');
+      lines.push('Average per 15-min slot: ' + (mealRows.length / entries.length).toFixed(1));
+    }
+  });
+
+  lines.push('');
+  lines.push('='.repeat(50));
+  lines.push('GRAND TOTAL (all sittings): ' + grandTotal);
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cookhouse-report-' + today + '.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+});
 </script>
 </body>
 </html>
