@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cookhouse Meal Sign-in</title>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1B1F1A; --paper:#F5F4EF; --panel:#FFFFFF;
+    --olive:#41522F; --olive-dark:#2C3820; --olive-light:#EAEFE2;
+    --muted:#6B6B63; --line:#DEDBD0; --danger:#A5402F;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .card{background:var(--panel);border-radius:16px;padding:28px 24px;max-width:380px;width:100%;
+    box-shadow:0 20px 40px -24px rgba(27,31,26,0.25);}
+  .eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;
+    text-transform:uppercase;color:var(--olive);margin-bottom:4px;text-align:center;}
+  h1{font-family:'Space Grotesk',sans-serif;font-size:20px;margin:0 0 2px;text-align:center;}
+  .sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:22px;}
+  label{font-size:12px;color:var(--muted);font-weight:500;display:block;margin-bottom:5px;}
+  select,input{width:100%;padding:11px 12px;border:1.4px solid var(--line);border-radius:8px;
+    font-size:14.5px;background:#fff;color:var(--ink);margin-bottom:14px;font-family:'Inter',sans-serif;}
+  select:disabled{background:#F2F1EC;color:var(--muted);}
+  button.primary{width:100%;padding:12px;background:var(--olive);color:#fff;border:none;border-radius:8px;
+    font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:14.5px;cursor:pointer;}
+  button.primary:hover{background:var(--olive-dark);}
+  button.primary:disabled{background:#B7BBAA;cursor:not-allowed;}
+  .error-msg{font-size:12.5px;color:var(--danger);margin:-8px 0 12px;display:none;}
+  .closed-view, .done-view{display:none;text-align:center;padding:20px 0;}
+  .closed-view .icon, .done-view .icon{width:48px;height:48px;border-radius:50%;background:var(--olive-light);
+    display:flex;align-items:center;justify-content:center;margin:0 auto 16px;}
+  .closed-view .icon svg, .done-view .icon svg{width:24px;height:24px;stroke:var(--olive-dark);}
+  .closed-view p, .done-view p{font-size:14px;color:var(--muted);margin:0;}
+  .done-view .name{font-weight:600;font-size:17px;margin-bottom:4px;color:var(--ink);}
+  .ticket{margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--olive-dark);
+    background:var(--olive-light);padding:8px 14px;border-radius:6px;display:inline-block;}
+  .loading{text-align:center;color:var(--muted);font-size:13px;padding:20px 0;}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="eyebrow">Cookhouse Meal Sign-in</div>
+
+    <div id="loading" class="loading">Loading…</div>
+
+    <div id="form-view" style="display:none;">
+      <h1 id="meal-heading"></h1>
+      <div class="sub" id="meal-date"></div>
+
+      <label for="course">Your course</label>
+      <select id="course">
+        <option value="">Select course</option>
+      </select>
+
+      <label for="student">Your name</label>
+      <select id="student" disabled>
+        <option value="">Select course first</option>
+      </select>
+
+      <div class="error-msg" id="err">Select your course and name first.</div>
+      <button class="primary" id="submit" disabled>Sign in for meal</button>
+    </div>
+
+    <div class="closed-view" id="closed-view">
+      <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
+      <p id="closed-msg"></p>
+    </div>
+
+    <div class="done-view" id="done-view">
+      <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+      <div class="name" id="done-name"></div>
+      <p id="done-detail"></p>
+      <div class="ticket" id="done-ticket"></div>
+    </div>
+  </div>
+
+<script src="config.js"></script>
+<script>
+async function init() {
+  const meal = getCurrentMeal();
+  const loading = document.getElementById('loading');
+
+  if (!meal) {
+    loading.style.display = 'none';
+    document.getElementById('closed-view').style.display = 'block';
+    document.getElementById('closed-msg').textContent = getClosedMessage();
+    return;
+  }
+
+  document.getElementById('meal-heading').textContent = meal.label + ' sign-in';
+  document.getElementById('meal-date').textContent = new Date().toLocaleDateString();
+
+  const { data: courses, error } = await supabaseClient.from('courses').select('id, name').order('name');
+  if (error) {
+    loading.textContent = 'Could not load courses. Check config.js Supabase settings.';
+    return;
+  }
+
+  const courseSel = document.getElementById('course');
+  courses.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name;
+    courseSel.appendChild(opt);
+  });
+
+  loading.style.display = 'none';
+  document.getElementById('form-view').style.display = 'block';
+
+  courseSel.addEventListener('change', async () => {
+    const studentSel = document.getElementById('student');
+    studentSel.innerHTML = '<option value="">Loading…</option>';
+    studentSel.disabled = true;
+    document.getElementById('submit').disabled = true;
+
+    if (!courseSel.value) {
+      studentSel.innerHTML = '<option value="">Select course first</option>';
+      return;
+    }
+    const { data: students } = await supabaseClient
+      .from('students').select('id, name').eq('course_id', courseSel.value).order('name');
+
+    studentSel.innerHTML = '<option value="">Select your name</option>';
+    students.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      studentSel.appendChild(opt);
+    });
+    studentSel.disabled = false;
+  });
+
+  document.getElementById('student').addEventListener('change', () => {
+    document.getElementById('submit').disabled = !document.getElementById('student').value;
+  });
+
+  document.getElementById('submit').addEventListener('click', async () => {
+    const err = document.getElementById('err');
+    const courseId = courseSel.value;
+    const studentId = document.getElementById('student').value;
+    const courseName = courseSel.selectedOptions[0].textContent;
+    const studentName = document.getElementById('student').selectedOptions[0].textContent;
+
+    if (!courseId || !studentId) { err.style.display = 'block'; return; }
+    err.style.display = 'none';
+
+    const { error: insertError } = await supabaseClient.from('signins').insert({
+      student_id: studentId,
+      course_id: courseId,
+      meal: meal.key,
+      signin_date: todayDateString(),
+    });
+
+    if (insertError) {
+      if (insertError.code === '23505') {
+        err.textContent = "You're already signed in for " + meal.label.toLowerCase() + " today.";
+      } else {
+        err.textContent = "Something went wrong — please tell cookhouse staff.";
+      }
+      err.style.display = 'block';
+      return;
+    }
+
+    document.getElementById('form-view').style.display = 'none';
+    document.getElementById('done-view').style.display = 'block';
+    document.getElementById('done-name').textContent = studentName;
+    document.getElementById('done-detail').textContent = courseName + ' — ' + meal.label.toLowerCase();
+    document.getElementById('done-ticket').textContent =
+      'LOGGED ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) + ' · ' + meal.label.toUpperCase();
+  });
+}
+init();
+</script>
+</body>
+</html>
