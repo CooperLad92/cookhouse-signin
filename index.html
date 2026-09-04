@@ -80,14 +80,33 @@
 
 <script src="config.js"></script>
 <script>
-async function init() {
+const MEAL_LABELS = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner' };
+
+async function resolveMeal() {
+  // Check the staff-controlled override first.
+  const { data: settings } = await supabaseClient
+    .from('cookhouse_settings').select('override_mode, override_meal').eq('id', 1).single();
+
+  if (settings && settings.override_mode === 'closed') {
+    return { meal: null, closedMessage: 'Sign-in is currently closed by cookhouse staff.' };
+  }
+  if (settings && settings.override_mode === 'open' && settings.override_meal) {
+    return { meal: { key: settings.override_meal, label: MEAL_LABELS[settings.override_meal] } };
+  }
+  // 'auto' (or no settings row / load failure) falls back to the normal time windows.
   const meal = getCurrentMeal();
+  if (!meal) return { meal: null, closedMessage: getClosedMessage() };
+  return { meal };
+}
+
+async function init() {
   const loading = document.getElementById('loading');
+  const { meal, closedMessage } = await resolveMeal();
 
   if (!meal) {
     loading.style.display = 'none';
     document.getElementById('closed-view').style.display = 'block';
-    document.getElementById('closed-msg').textContent = getClosedMessage();
+    document.getElementById('closed-msg').textContent = closedMessage;
     return;
   }
 
