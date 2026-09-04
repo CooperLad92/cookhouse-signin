@@ -66,9 +66,9 @@
   .list-item:last-child{border-bottom:none;}
   .list-item .sub{font-size:11.5px;color:var(--muted);}
 
-  .override-box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;}
-  .override-row{display:flex;align-items:center;gap:10px;}
-  .override-label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap;}
+  .override-box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;width:190px;box-sizing:border-box;}
+  .override-row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .override-label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .switch{position:relative;display:inline-block;width:36px;height:20px;flex-shrink:0;}
   .switch input{opacity:0;width:0;height:0;}
   .slider{position:absolute;cursor:pointer;inset:0;background:#C7C4B6;border-radius:20px;transition:0.15s;}
@@ -115,6 +115,7 @@
             <option value="breakfast">Breakfast</option>
             <option value="lunch">Lunch</option>
             <option value="dinner">Dinner</option>
+            <option value="other">Other</option>
           </select>
         </div>
       </div>
@@ -132,6 +133,7 @@
         <button class="meal-pill active" data-meal="breakfast">Breakfast</button>
         <button class="meal-pill" data-meal="lunch">Lunch</button>
         <button class="meal-pill" data-meal="dinner">Dinner</button>
+        <button class="meal-pill" data-meal="other">Other</button>
       </div>
       <button class="report-btn" id="download-report-btn">Download today's report</button>
     </div>
@@ -152,7 +154,10 @@
   <div id="tab-manage" style="display:none;">
     <div class="manage-grid">
       <div class="panel">
-        <h2>Courses</h2>
+        <div class="panel-head" style="margin-bottom:14px;">
+          <h2 style="margin:0;">Courses</h2>
+          <span class="live-tag" id="total-students-tag" style="color:var(--muted);"></span>
+        </div>
         <div class="row-inline">
           <input id="new-course-name" placeholder="New course name" />
           <button class="small" id="add-course-btn">Add</button>
@@ -165,6 +170,10 @@
           <input id="new-student-name" placeholder="Student name" />
           <select id="new-student-course"><option value="">Course</option></select>
           <button class="small" id="add-student-btn">Add</button>
+        </div>
+        <div class="row-inline" style="margin-top:-4px;">
+          <label style="font-size:12px;color:var(--muted);flex-shrink:0;align-self:center;margin:0;">Filter:</label>
+          <select id="student-filter"><option value="">All courses</option></select>
         </div>
         <div id="student-list"></div>
       </div>
@@ -233,10 +242,15 @@ async function loadDashboard() {
 }
 
 let studentsCache = [];
+let studentFilter = '';
 
 async function loadManageLists() {
   const { data: courses } = await supabaseClient.from('courses').select('id, name').order('name');
   coursesCache = courses || [];
+
+  const { data: students } = await supabaseClient
+    .from('students').select('id, name, course_id, courses(name)').order('name');
+  studentsCache = students || [];
 
   renderCourseList();
 
@@ -244,25 +258,37 @@ async function loadManageLists() {
   courseSelect.innerHTML = '<option value="">Course</option>' +
     coursesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
 
-  const { data: students } = await supabaseClient
-    .from('students').select('id, name, course_id, courses(name)').order('name');
-  studentsCache = students || [];
+  const filterSelect = document.getElementById('student-filter');
+  const prevFilter = studentFilter;
+  filterSelect.innerHTML = '<option value="">All courses</option>' +
+    coursesCache.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  filterSelect.value = prevFilter;
+
+  document.getElementById('total-students-tag').textContent = studentsCache.length + ' students total';
 
   renderStudentList();
 }
+
+document.getElementById('student-filter').addEventListener('change', (e) => {
+  studentFilter = e.target.value;
+  renderStudentList();
+});
 
 function renderCourseList() {
   const el = document.getElementById('course-list');
   if (!coursesCache.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px;">No courses yet.</p>'; return; }
 
-  el.innerHTML = coursesCache.map(c => `
+  el.innerHTML = coursesCache.map(c => {
+    const count = studentsCache.filter(s => s.course_id === c.id).length;
+    return `
     <div class="list-item-row" data-row-course="${c.id}">
-      <span>${c.name}</span>
+      <span>${c.name} <span style="color:var(--muted);font-size:12px;">(${count})</span></span>
       <div class="list-item-actions">
         <button class="edit-btn" data-edit-course="${c.id}">Edit</button>
         <button class="del" data-id="${c.id}" data-type="course">Remove</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   el.querySelectorAll('[data-edit-course]').forEach(btn => {
     btn.addEventListener('click', () => startEditCourse(btn.dataset.editCourse));
@@ -296,9 +322,15 @@ function startEditCourse(id) {
 
 function renderStudentList() {
   const el = document.getElementById('student-list');
-  if (!studentsCache.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px;">No students yet.</p>'; return; }
+  const visible = studentFilter ? studentsCache.filter(s => s.course_id === studentFilter) : studentsCache;
 
-  el.innerHTML = studentsCache.map(s => `
+  if (!visible.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;">' +
+      (studentFilter ? 'No students on this course yet.' : 'No students yet.') + '</p>';
+    return;
+  }
+
+  el.innerHTML = visible.map(s => `
     <div class="list-item-row" data-row-student="${s.id}">
       <span>${s.name}<div class="sub">${s.courses ? s.courses.name : 'No course'}</div></span>
       <div class="list-item-actions">
@@ -495,6 +527,25 @@ document.getElementById('download-report-btn').addEventListener('click', async (
   lines.push('');
   lines.push('='.repeat(50));
   lines.push('GRAND TOTAL (all sittings): ' + grandTotal);
+
+  // Out-of-hours 'Other' sign-ins, if any (no fixed window, so no busiest/quietest breakdown)
+  const otherRows = rows.filter(r => r.meal === 'other');
+  if (otherRows.length > 0) {
+    lines.push('');
+    lines.push('OTHER (out-of-hours)');
+    lines.push('-'.repeat(50));
+    lines.push('Total signed in: ' + otherRows.length);
+    const byCourseOther = {};
+    otherRows.forEach(r => {
+      const name = r.courses ? r.courses.name : 'Unknown';
+      byCourseOther[name] = (byCourseOther[name] || 0) + 1;
+    });
+    lines.push('');
+    lines.push('By course:');
+    Object.entries(byCourseOther).sort((a, b) => b[1] - a[1]).forEach(([name, count]) => {
+      lines.push('  ' + name + ': ' + count);
+    });
+  }
 
   const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
